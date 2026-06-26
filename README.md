@@ -14,6 +14,61 @@ Built for the **SUST CSE Carnival 2026 · Codex Community Hackathon** Online Pre
 
 ---
 
+## Architecture
+
+```mermaid
+flowchart TB
+    Judge["Judge Harness / Client"]
+
+    subgraph Service["QueueStorm Investigator (FastAPI / uv / Python 3.12)"]
+        direction TB
+        subgraph HTTP["HTTP Layer (app/main.py)"]
+            Health["GET /health"]
+            Analyze["POST /analyze-ticket"]
+            ErrH["Error handlers: 400 / 422 / 500 (safe)"]
+        end
+        Validation["Schema Layer (app/models)<br/>TicketRequest / TicketResponse + enums"]
+        Orchestrator["investigate() — app/services/investigator.py"]
+        subgraph Engine["Rule-Based Reasoning Engine"]
+            Matcher["transaction_matcher<br/>evidence match + verdict"]
+            Classifier["classifier<br/>case_type / department / severity"]
+            Phishing["Phishing override (non-bypassable)"]
+        end
+        Safety["safety.py — customer_reply<br/>ALWAYS template (EN / BN)"]
+        LLM["llm_client.py — summary + next_action (optional)"]
+    end
+
+    subgraph Backends["LLM Backends (optional, priority fallback)"]
+        Custom["1. Custom local API (CUSTOM_API_URL)"]
+        Groq["2. Groq free API (GROQ_API_KEY)"]
+        RuleFB["3. Rule-based templates (always)"]
+    end
+
+    Judge -->|JSON| Health
+    Judge -->|JSON ticket| Analyze
+    Analyze --> Validation
+    Validation -->|valid| Orchestrator
+    Validation -.->|invalid| ErrH
+    Orchestrator --> Matcher
+    Orchestrator --> Classifier
+    Orchestrator --> Phishing
+    Orchestrator --> Safety
+    Orchestrator --> LLM
+    LLM --> Custom
+    Custom -.->|unavailable| Groq
+    Groq -.->|unavailable| RuleFB
+    Orchestrator -->|200 JSON| Judge
+
+    classDef safety fill:#ffe6e6,stroke:#c0392b,stroke-width:2px;
+    class Safety,Phishing safety;
+```
+
+The complaint is **investigated against the transaction history** (not just classified): the matcher picks the `relevant_transaction_id` and decides the `evidence_verdict`, the classifier routes and scores it, and the safety layer always produces `customer_reply` from templates so no LLM can introduce a safety violation. The optional LLM layer only polishes `agent_summary` and `recommended_next_action`, falling back through custom API → Groq → rule-based templates.
+
+See [`docs/architecture.md`](./docs/architecture.md) for the full sequence diagram, LLM fallback decision flow, and design principles.
+
+---
+
 ## Setup
 
 **Requirements:** Python 3.12+, [uv](https://github.com/astral-sh/uv)
