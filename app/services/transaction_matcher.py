@@ -50,6 +50,19 @@ def match_transaction(req: TicketRequest) -> Tuple[Optional[str], str]:
     scored.sort(key=lambda x: x[0], reverse=True)
     best_score, best_txn = scored[0]
 
+    # Duplicate detection takes precedence over the generic ambiguity check:
+    # if the complaint alleges a duplicate and two near-identical transactions
+    # exist, the LATER one is the suspected duplicate (evidence is consistent).
+    if re.search(r"twice|duplicate|double|two times|2 times|দুইবার", complaint):
+        groups: dict = {}
+        for _, t in scored:
+            key = (t.amount, t.type, t.counterparty, t.status)
+            groups.setdefault(key, []).append(t)
+        for txns in groups.values():
+            if len(txns) >= 2:
+                latest = max(txns, key=lambda t: t.timestamp)
+                return latest.transaction_id, "consistent"
+
     # Multiple plausible transactions → ambiguous (can't pick one safely)
     plausible = [s for s in scored if s[0] >= 5]
     if len(plausible) > 1:

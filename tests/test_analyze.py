@@ -152,6 +152,9 @@ class TestEvidenceReasoning:
         case = next(c for c in load_cases() if c["id"] == "SAMPLE-08")
         body = post_ticket(case["input"]).json()
         assert body["evidence_verdict"] == "insufficient_data"
+        assert body["relevant_transaction_id"] is None
+        assert body["case_type"] == "wrong_transfer"
+        assert body["department"] == "dispute_resolution"
 
     def test_sample_09_merchant_settlement(self):
         case = next(c for c in load_cases() if c["id"] == "SAMPLE-09")
@@ -159,12 +162,26 @@ class TestEvidenceReasoning:
         assert body["relevant_transaction_id"] == "TXN-9901"
         assert body["case_type"] == "merchant_settlement_delay"
         assert body["department"] == "merchant_operations"
+        assert body["severity"] == "medium"
 
     def test_sample_10_duplicate_payment(self):
         case = next(c for c in load_cases() if c["id"] == "SAMPLE-10")
         body = post_ticket(case["input"]).json()
         assert body["case_type"] == "duplicate_payment"
         assert body["department"] == "payments_ops"
+        # Suspected duplicate is the LATER of the two identical payments.
+        assert body["relevant_transaction_id"] == "TXN-10002"
+        assert body["evidence_verdict"] == "consistent"
+
+    def test_all_samples_match_expected_core_fields(self, cases):
+        """Regression guard: every sample matches expected on the scored fields."""
+        core = ["relevant_transaction_id", "evidence_verdict", "case_type", "department"]
+        for case in cases:
+            body = post_ticket(case["input"]).json()
+            exp = case["expected_output"]
+            for f in core:
+                assert body[f] == exp[f], \
+                    f"{case['id']}: {f} got={body[f]!r} expected={exp[f]!r}"
 
 
 class TestSafetyGuardrails:
@@ -203,17 +220,25 @@ class TestSafetyGuardrails:
 
 
 class TestErrorHandling:
-    def test_missing_required_fields_returns_422(self):
+    # Spec 4.1: malformed input / missing required fields -> 400.
+    def test_missing_required_fields_returns_400(self):
         resp = client.post("/analyze-ticket", json={"ticket_id": "T1"})
-        assert resp.status_code == 422
+        assert resp.status_code == 400
 
-    def test_missing_ticket_id_returns_422(self):
+    def test_missing_ticket_id_returns_400(self):
         resp = client.post("/analyze-ticket", json={"complaint": "something"})
-        assert resp.status_code == 422
+        assert resp.status_code == 400
 
+    # Spec 4.1: schema-valid but semantically invalid (empty complaint) -> 422.
     def test_empty_complaint_returns_422(self):
         resp = client.post("/analyze-ticket", json={"ticket_id": "T1", "complaint": "  "})
         assert resp.status_code == 422
+
+    def test_error_response_leaks_no_internals(self):
+        resp = client.post("/analyze-ticket", json={"ticket_id": "T1"})
+        body = resp.text.lower()
+        for leak in ("traceback", "file \"", "line ", "pydantic", "valueerror"):
+            assert leak not in body, f"error response leaked internals: {leak}"
 
     def test_empty_transaction_history_handled(self):
         resp = post_ticket({
@@ -230,10 +255,10 @@ class TestErrorHandling:
         })
         assert resp.status_code == 200
 
-    def test_invalid_json_returns_error(self):
+    def test_invalid_json_returns_400(self):
         resp = client.post(
             "/analyze-ticket",
             content=b"not json",
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 400

@@ -7,3 +7,10 @@ tests/
 .env
 .pytest_cache
 dist/
+# Large / non-runtime artifacts — keep the build context and image small
+*.pdf
+*.zip
+SUST_Preli_Sample_Cases.json
+.vercel/
+vercel.json
+api/

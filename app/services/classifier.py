@@ -11,6 +11,9 @@ _CASE_RULES = [
         r"wrong (number|person|recipient|account)", r"sent to wrong",
         r"wrong number", r"ভুল নম্বর", r"ভুল.*পাঠিয়েছি",
         r"wrong transfer", r"mistakenly sent",
+        # P2P transfer where the recipient claims non-receipt → dispute path
+        r"sent\b.*\b(brother|sister|friend|mother|father|wife|husband|uncle|aunt|cousin|him|her)\b",
+        r"sent\b.{0,60}(didn.?t|did not|hasn.?t|has not|never).{0,15}(get|got|receiv)",
     ]),
     ("duplicate_payment", [
         r"charged twice", r"deducted twice", r"double (charged|deducted|payment)",
@@ -86,14 +89,15 @@ def score_severity(
     if case_type in ("wrong_transfer", "duplicate_payment", "agent_cash_in_issue"):
         if evidence_verdict == "consistent":
             return "high"
-        if evidence_verdict == "inconsistent":
-            return "medium"
+        # inconsistent or ambiguous (insufficient_data) still warrants a dispute review
+        return "medium"
 
     if case_type == "payment_failed":
         return "high" if amount > 0 else "medium"
 
     if case_type == "merchant_settlement_delay":
-        return "high" if amount > 10000 else "medium"
+        # A delayed settlement is funds-in-transit, not lost money → medium
+        return "critical" if amount > 50000 else "medium"
 
     if amount > 5000:
         return "high"

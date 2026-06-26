@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.routers import health, analyze
@@ -11,6 +12,16 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(analyze.router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Spec 4.1: malformed input (invalid JSON, missing required fields, wrong
+    # types) -> 400 with a non-sensitive error message.
+    return JSONResponse(
+        status_code=400,
+        content={"error": "malformed request: invalid or missing required fields"},
+    )
 
 
 @app.exception_handler(Exception)
