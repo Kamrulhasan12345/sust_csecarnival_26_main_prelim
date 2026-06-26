@@ -242,22 +242,51 @@ Complaint text is treated as data input only. Instructions embedded in complaint
 uv run pytest -v
 ```
 
-Tests cover all 10 public sample cases, schema compliance, safety guardrails, error handling, and prompt injection resistance.
+The suite has **120+ tests** covering:
+
+| Area | What it checks |
+|------|----------------|
+| Sample cases (`test_analyze.py`) | All 10 public cases match expected `relevant_transaction_id`, `evidence_verdict`, `case_type`, `department`, `severity` |
+| Structural edge cases (`test_edge_structural.py`) | Optional/unknown fields, amount boundaries (0 → 1M, negative, float, numeric-string), 50-entry histories, ~17k-char & emoji/gibberish complaints, malformed JSON → 400, empty complaint → 422, wrong types → 400, determinism, `/health` stability, latency, request bursts |
+| Adversarial / AI-native (`test_edge_adversarial.py`) | 12 prompt-injection/jailbreak variants, safety-sensitive reports, multilingual (Bangla / Banglish), ambiguous & contradictory evidence, and mocked-LLM tests simulating a jailbroken backend |
+| LLM safety filter (`test_llm_safety.py`) | JSON parsing (fenced/truncated/prose) and rejection of unsafe LLM output |
+
+By default the **real LLM backends are disabled** so the suite is fast, offline, and deterministic. The LLM *logic* is still fully covered via mocked backends — only calls to your real `.env` backend are suppressed.
+
+### Testing against a real LLM backend
+
+Tests that hit your actual configured backend (from `.env`) are marked `llm` and are **skipped unless you opt in** with `RUN_LLM_TESTS=1`:
+
+```bash
+# Only the live LLM tests (makes real network calls to custom + Groq)
+RUN_LLM_TESTS=1 uv run pytest -m llm -v -s
+
+# Everything, including the live LLM tests
+RUN_LLM_TESTS=1 uv run pytest -v
+
+# Default — live LLM skipped, fast and deterministic
+uv run pytest -v
+```
+
+The live tests confirm the backend is reachable and that its output is schema-valid and safe (or cleanly falls back). They `skip` gracefully if no `.env`/backend is configured.
 
 ---
 
 ## Environment Variables
 
-See [`.env.example`](./.env.example) for the full list. No secrets are required for basic operation.
+See [`.env.example`](./.env.example) for the full list. No secrets are required for basic operation. A local `.env` is auto-loaded on startup; in deployment, platform-injected env vars take precedence (they are not overridden).
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `PORT` | No (default 8000) | Port to bind the service |
-| `CUSTOM_API_URL` | No | Base URL of a local OpenAI-compatible API (e.g. `http://localhost:11434/v1`) |
+| `CUSTOM_API_URL` | No | Base URL of a local OpenAI-compatible API (e.g. `http://localhost:11434/v1`). Tried first if set. |
 | `CUSTOM_API_KEY` | No | API key for custom endpoint (default: `auto`) |
 | `CUSTOM_MODEL` | No | Model name for custom endpoint (default: `auto`) |
-| `GROQ_API_KEY` | No | Groq free API key — used if custom API is unavailable |
+| `GROQ_API_KEY` | No | Groq free API key — used if the custom API is unset/unavailable |
 | `GROQ_MODEL` | No | Groq model name (default: `llama-3.1-8b-instant`) |
+| `LLM_TIMEOUT` | No | Per-request LLM timeout in seconds (default: `8`). Worst-case latency ≈ `backends × LLM_TIMEOUT`. |
+| `LLM_MAX_TOKENS` | No | Max tokens for LLM generation (default: `400`) |
+| `RUN_LLM_TESTS` | No | Test-only: set to `1` to run live-backend tests (`-m llm`) |
 
 ---
 
