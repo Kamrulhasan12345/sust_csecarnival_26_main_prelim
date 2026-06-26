@@ -1,3 +1,13 @@
+# Load .env (if present) BEFORE importing routers, so llm_client picks up keys.
+# In deployment, platform-injected env vars already exist and take precedence
+# (load_dotenv does not override existing environment variables).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse

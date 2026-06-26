@@ -186,6 +186,14 @@ This service uses a **rule-based reasoning engine** as its primary approach. No 
 
 When an LLM backend is available, it enhances `agent_summary` and `recommended_next_action` with more natural language. `customer_reply` is **always** generated from safety templates, never from the LLM, guaranteeing zero safety violations regardless of LLM availability.
 
+**LLM robustness guarantees:**
+- **Output safety filter** — every LLM-generated field is scanned for unsafe phrasing (credential requests, unconditional refund/reversal/unblock promises). If either field trips the filter, the LLM result is discarded and the safe rule-based template is used instead. The LLM can never introduce a safety violation.
+- **Bounded latency** — each backend uses `max_retries=0` and a per-request timeout (`LLM_TIMEOUT`, default 8s), so a slow or unreachable backend fails fast and falls through. Worst case ≈ `backends × LLM_TIMEOUT`, always well under the 30s limit.
+- **Parse-and-fall-through** — JSON is parsed per backend; a backend returning malformed, truncated, or reasoning-prose output falls through to the next backend rather than aborting enhancement.
+- **`.env` auto-loading** — a local `.env` is loaded automatically on startup for convenience; in deployment, platform-injected env vars take precedence (they are not overridden).
+
+**Latency note:** a slow custom backend (e.g. a local model) is tried first and can add several seconds per request. For lowest latency under judging, prefer Groq-only (≈1–2s) or no LLM (rule-based, ≈20ms). Set `CUSTOM_API_URL` empty to skip the custom backend.
+
 ---
 
 ## MODELS
